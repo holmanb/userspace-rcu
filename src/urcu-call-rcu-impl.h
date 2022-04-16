@@ -402,6 +402,7 @@ static void *call_rcu_thread(void *arg)
 	}
 	uatomic_or(&crdp->flags, URCU_CALL_RCU_STOPPED);
 	rcu_unregister_thread();
+	pthread_detach(crdp->tid);
 	return NULL;
 }
 
@@ -739,11 +740,12 @@ void call_rcu(struct rcu_head *head,
  * a list corruption bug in the 0.7.x series. The equivalent fix
  * appeared in 0.6.8 for the stable-0.6 branch.
  */
-void call_rcu_data_free(struct call_rcu_data *crdp)
+static void __call_rcu_data_free(struct call_rcu_data *crdp)
 {
-	if (crdp == NULL || crdp == default_call_rcu_data) {
+	if (crdp == NULL) {
 		return;
 	}
+
 	if ((uatomic_read(&crdp->flags) & URCU_CALL_RCU_STOPPED) == 0) {
 		uatomic_or(&crdp->flags, URCU_CALL_RCU_STOP);
 		wake_call_rcu_thread(crdp);
@@ -769,6 +771,20 @@ void call_rcu_data_free(struct call_rcu_data *crdp)
 	call_rcu_unlock(&call_rcu_mutex);
 
 	free(crdp);
+}
+
+
+void call_rcu_data_free(struct call_rcu_data *crdp)
+{
+	if (crdp == default_call_rcu_data) {
+		return;
+	}
+	__call_rcu_data_free(crdp);
+}
+
+static void call_rcu_data_free_default(struct call_rcu_data *crdp)
+{
+	__call_rcu_data_free(crdp);
 }
 
 /*
@@ -1017,4 +1033,12 @@ void urcu_unregister_rculfhash_atfork(struct urcu_atfork *atfork __attribute__((
 	registered_rculfhash_atfork = NULL;
 end:
 	call_rcu_unlock(&call_rcu_mutex);
+}
+
+__attribute__((destructor(102)))
+static void default_free(void)
+{
+	struct call_rcu_data *default_data = get_default_call_rcu_data();
+	synchronize_rcu();
+	call_rcu_data_free_default(default_data);
 }
