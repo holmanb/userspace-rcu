@@ -561,6 +561,7 @@ struct call_rcu_data *get_default_call_rcu_data(void)
 	}
 	call_rcu_data_init(&default_call_rcu_data, 0, -1);
 	call_rcu_unlock(&call_rcu_mutex);
+
 	return default_call_rcu_data;
 }
 
@@ -1035,10 +1036,18 @@ end:
 	call_rcu_unlock(&call_rcu_mutex);
 }
 
+__attribute__((constructor(102)))
+static void default_init(void)
+{
+	call_rcu_lock(&call_rcu_mutex);
+	call_rcu_data_init(&default_call_rcu_data, 0, -1);
+	call_rcu_unlock(&call_rcu_mutex);
+}
+
 __attribute__((destructor(102)))
 static void default_free(void)
 {
-	struct call_rcu_data *default_data = get_default_call_rcu_data();
-	synchronize_rcu();
-	call_rcu_data_free_default(default_data);
+	call_rcu_lock(&call_rcu_mutex);
+	call_rcu_data_free_default(default_call_rcu_data);
+	call_rcu_unlock(&call_rcu_mutex);
 }
